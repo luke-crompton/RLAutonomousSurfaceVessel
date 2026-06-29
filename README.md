@@ -20,7 +20,7 @@ Two PPO training runs over **1 million environment steps** across 20 parallel en
 
 ### Coverage
 ![Coverage](assets/RLBoat_coverage.png)
-Both runs converge to roughly **38–39% area coverage**, with steady improvement from ~3% at the start. The agent learns to systematically explore rather than circle the same area.
+The agent reaches up to **~80% coverage on accessible map area**, with consistent improvement from ~3% at the start. The TensorBoard mean shown (~38%) is averaged across 20 parallel environments per rollout, each generated from a different random seed — some seeds produce maps where a portion of the lake is physically cut off by obstacles and unreachable by any path. Averaging across those inaccessible configurations pulls the reported metric down significantly. On maps where the full area is reachable, the agent systematically covers the majority of the environment.
 
 ### Total Reward
 ![Total Reward](assets/RLBoat_Trew.png)
