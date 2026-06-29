@@ -100,7 +100,7 @@ The planned sensor layout used three sensor types chosen to give the agent dense
 - **JSN-SR04T Ultrasonic (40° @ ±30°)** — medium-range side coverage for left/right clearance
 - **GY-ToF10M (5° side cones)** — long-range narrow Time-of-Flight sensors providing precise lateral distance to fill in the free-space map with high resolution
 
-Due to hardware budget constraints, the **GY-ToF10M ToF sensors and 24GHz radar module were both replaced with shorter-range ultrasonic sensors** on the physical boat. This had a direct impact on performance: the narrow 5° ToF cones were specifically designed to build a precise picture of free and occupied space in the side directions, and the long-range radar provided reliable forward detection — both of which feed the probability map and cone observation. The wider, shorter-range ultrasonic replacements are less precise for mapping and have significantly reduced range, meaning the agent had less complete information about its surroundings when running on real hardware compared to simulation.
+Due to hardware budget constraints, all planned sensors — the **GY-ToF10M ToF sensors and 24GHz radar module** — were replaced with **5× JSN-SR04T ultrasonic sensors** on the physical boat. This had a direct impact on performance: the narrow 5° ToF cones were specifically designed to build a precise picture of free and occupied space in the side directions, and the long-range radar provided reliable forward detection — both of which feed the probability map and cone observation. The JSN-SR04T sensors have wider cones, shorter range, and are less precise for mapping, meaning the agent had less complete information about its surroundings when running on real hardware compared to simulation.
 
 ---
 
@@ -183,9 +183,7 @@ tensorboard --logdir runs/ppo_lake
 ## Hardware
 
 - ESP32 microcontroller running `hardware/combined_sensor_motor/combined_sensor_motor.ino`
-- 5× JSN-SR04T ultrasonic sensors
-- 2× short-range ultrasonic sensors (replacing planned GY-ToF10M ToF sensors due to budget)
-- Short-range ultrasonic sensor (replacing planned 24GHz radar due to budget)
+- 5× JSN-SR04T ultrasonic sensors (replacing planned GY-ToF10M ToF sensors and 24GHz radar due to budget)
 - Brushless motors with ESC
 
 ## Project Context
