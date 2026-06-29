@@ -8,9 +8,37 @@ A PPO-trained autonomous navigation agent for an unmanned surface vessel (USV), 
 
 ## What it Does
 
-The agent learns to navigate a simulated lake, avoiding obstacles and maximising area coverage using only onboard sensor readings — no GPS, no global map. Once trained, it runs live on a physical boat: an ESP32 reads ultrasonic and ToF sensor data over serial, and the model outputs thrust and yaw commands back to the motors in real time.
+The agent navigates a simulated lake using its GPS position and onboard sensor readings — no pre-built map, no global knowledge. Sensor data is processed through a Bayesian probability map which filters out noise and accumulates evidence of obstacle positions over time. That map, combined with a record of visited cells, feeds a directional cone observation that tells the agent where free space and obstacles lie in each direction around it. A PPO policy then outputs continuous thrust and yaw commands to maximise area coverage while avoiding collisions.
 
-The full pipeline covers simulation design, reward shaping, PPO training, sensor modelling, and embedded hardware integration.
+The boat's physics are modelled with simplified (non-CFD) dynamics covering thrust response, drag, yaw rate, slew-limited commands, and speed-dependent turn radius — sufficient to produce realistic motion behaviour for policy training without the computational cost of full fluid simulation.
+
+Once trained, the agent runs live on a physical boat: an ESP32 reads sensor data over serial and the model outputs commands back to the motors in real time.
+
+---
+
+## How it Works
+
+### Navigation Pipeline
+
+The agent's observation at each step combines:
+- **GPS position** — normalised (x, y) coordinates within the environment
+- **Heading** — expressed as sin/cos to avoid angle discontinuities
+- **Sensor distances** — ultrasonic (left/right) and radar (forward), normalised and noise-augmented
+- **Velocity and yaw rate** — current speed and turn rate, normalised
+- **Previous action** — last commanded speed and yaw, giving the policy temporal context
+- **Directional cone map** — 12 sectors describing obstacle proximity and unexplored space in each direction (see below)
+
+### Ray Casting
+
+Each sensor is modelled as a fan of rays spanning its field of view. At every step, rays are marched cell-by-cell through the grid until they hit an obstacle or reach max range. The shortest hit across the fan gives the sensor reading. All precomputed ray directions are cached at startup (`Configuration.py → precompute_ray_lines`) so no trigonometry is repeated during training.
+
+![Ray casting](assets/ray_cast.png)
+
+The red ray above shows the nearest hit within the fan — the reading the policy receives. Rays that clear all obstacles continue to max range and mark those cells as free space.
+
+### Bayesian Probability Map
+
+Raw sensor readings are noisy — a single return could be a real obstacle or interference. Rather than acting on individual readings, each hit updates a **log-odds probability map** across the grid. Every detected surface increments the log-odds at that cell; every clear ray decrements it. Over multiple passes, genuine obstacles accumulate to high probability while noise averages out. This map is displayed as the red overlay in the simulation viewer and directly feeds the cone observation.
 
 ---
 
@@ -36,13 +64,12 @@ Crash penalty starts at around −0.008 early in training and trends toward zero
 
 ![Cone Spatial Map](assets/cone_spartial_map.png)
 
-The agent observes its surroundings through **12 equal angular sectors** (cones) radiating from its current position. Each cone returns two values that form part of the observation vector:
+The agent observes its surroundings through **12 equal angular sectors** (cones) radiating from its current position. The probability map and visited cell record are sampled within each cone to produce two values per sector:
 
-- **Green shading (unvisited fraction):** How much unvisited free space lies in that direction — darker green means more unexplored area to the agent's knowledge. This drives the agent toward areas it has not yet covered.
-- **Red arcs (obstacle proximity):** The normalised distance to the nearest detected obstacle within that cone. The arc is drawn at the obstacle's position — a red arc close to the centre means an obstacle is nearby in that direction.
-- **Blue lines:** The raw normalised obstacle distance along each cone's centreline.
+- **Green shading (unvisited fraction):** How much unvisited free space lies in that direction — darker green means more unexplored area. This is derived from cells that the probability map has confirmed as free but that the agent has not yet passed through.
+- **Red arcs (obstacle proximity):** The normalised distance to the nearest high-probability obstacle within that cone, drawn at the obstacle's position. A red arc close to the centre means a likely obstacle is nearby in that direction.
 
-All cone values are rotated into the **agent's egocentric frame** at each step, so cone index 0 always points in the direction the boat is currently heading. This gives the agent a consistent directional reference regardless of world orientation. See `Lake_environment.py → compute_cones()` and `translate_egocentric_cone()` for the implementation.
+All cone values are rotated into the **agent's egocentric frame** at each step, so cone index 0 always points in the direction the boat is currently heading. See `Lake_environment.py → compute_cones()` and `translate_egocentric_cone()`.
 
 ---
 
@@ -60,6 +87,20 @@ Run `python View_model.py` to watch the trained agent navigate in real time.
 | Cyan wedges | Ultrasonic sensor (US) field of view with measured range |
 | Magenta wedges | Time-of-Flight (ToF) sensor left/right readings |
 | Orange wedge | Forward radar cone |
+
+---
+
+## Sensor Array Design
+
+![Sensor Array](assets/sensor_array.png)
+
+The planned sensor layout used three sensor types chosen to give the agent dense spatial coverage:
+
+- **24GHz Radar (20° FOV)** — long-range forward obstacle detection
+- **JSN-SR04T Ultrasonic (40° @ ±30°)** — medium-range side coverage for left/right clearance
+- **GY-ToF10M (5° side cones)** — long-range narrow Time-of-Flight sensors providing precise lateral distance to fill in the free-space map with high resolution
+
+Due to hardware budget constraints, the **GY-ToF10M ToF sensors were replaced with shorter-range ultrasonic sensors** on the physical boat. This had a direct impact on performance: the narrow 5° ToF cones were specifically designed to build a precise picture of free and occupied space in the side directions, which feeds both the probability map and the cone observation. The wider ultrasonic cones are less precise for mapping and have shorter range, meaning the agent had less complete information about its surroundings when running on real hardware compared to simulation.
 
 ---
 
@@ -142,8 +183,9 @@ tensorboard --logdir runs/ppo_lake
 ## Hardware
 
 - ESP32 microcontroller running `hardware/combined_sensor_motor/combined_sensor_motor.ino`
-- 5× HC-SR04 ultrasonic sensors
-- 2× VL53L0X ToF sensors
+- 5× JSN-SR04T ultrasonic sensors
+- 2× short-range ultrasonic sensors (replacing planned GY-ToF10M due to budget)
+- 24GHz radar module
 - Brushless motors with ESC
 
 ## Trained Model
